@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+using System.Reflection;
 using UnityEditor.Recorder.FrameCapturer;
 
 namespace UnityEditor.Recorder
@@ -20,6 +21,24 @@ namespace UnityEditor.Recorder
         static HashSet<RecorderInfo> s_BuiltInRecorderInfos;
         static HashSet<RecorderInfo> s_LegacyRecorderInfos;
 
+        /// <summary>
+        /// (ASG) Some types in Roslyn can't be loaded via GetTypes. Filter those out.
+        /// </summary>
+        private static Type[] GetValidTypes(Assembly a)
+        {
+            Type[] allTypes;
+            try
+            {
+                allTypes = a.GetTypes();
+            }
+            catch (ReflectionTypeLoadException e)
+            {
+                allTypes = e.Types.Where(t => t != null).ToArray();
+            }
+
+            return allTypes;
+        }
+
         static IEnumerable<KeyValuePair<Type, object[]>> FindRecorders()
         {
             var attribType = typeof(RecorderSettingsAttribute);
@@ -28,7 +47,7 @@ namespace UnityEditor.Recorder
                 Type[] types;
                 try
                 {
-                    types = a.GetTypes();
+                    types = GetValidTypes(a);
                 }
                 catch (Exception)
                 {
