@@ -231,6 +231,24 @@ namespace UnityEditor.Recorder
         }
 
         /// <summary>
+        /// (ASG) Some types in Roslyn can't be loaded via GetTypes. Filter those out.
+        /// </summary>
+        private Type[] GetValidTypes(Assembly a)
+        {
+            Type[] allTypes;
+            try
+            {
+                allTypes = a.GetTypes();
+            }
+            catch (ReflectionTypeLoadException e)
+            {
+                allTypes = e.Types.Where(t => t != null).ToArray();
+            }
+
+            return allTypes;
+        }
+
+        /// <summary>
         /// Find all the encoders by looking at the content of the current assemblies.
         /// </summary>
         private void RegisterAllEncoders()
@@ -239,7 +257,7 @@ namespace UnityEditor.Recorder
             // For all assemblies find all MediaEncoderRegister
             foreach (Assembly a in AppDomain.CurrentDomain.GetAssemblies())
             {
-                var allTypes = a.GetTypes();
+                var allTypes = GetValidTypes(a);
                 var encoders = allTypes.Where(
                     type => type.IsSubclassOf(typeof(MediaEncoderRegister))
                 );
