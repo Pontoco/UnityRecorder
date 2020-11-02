@@ -27,7 +27,7 @@ namespace UnityEditor.Recorder
                 return false;
             }
 
-            var audioInput = (AudioInput)m_Inputs[0];
+            var audioInput = (UnityAudioInput)m_Inputs[0];
             var audioAttrsList = new List<AudioTrackAttributes>();
 
             if (audioInput.audioSettings.PreserveAudio)
@@ -67,7 +67,7 @@ namespace UnityEditor.Recorder
 
         protected internal override void RecordFrame(RecordingSession session)
         {
-            var audioInput = (AudioInput)m_Inputs[0];
+            var audioInput = (UnityAudioInput)m_Inputs[0];
 
             if (!audioInput.audioSettings.PreserveAudio)
                 return;

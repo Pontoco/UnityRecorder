@@ -108,7 +108,7 @@ namespace UnityEditor.Recorder
                         width, height, videoAttrs.frameRate.numerator,
                         videoAttrs.frameRate.denominator, Settings.fileNameGenerator.BuildAbsolutePath(session)));
 
-            var audioInput = (AudioInput)m_Inputs[1];
+            var audioInput = (AudioInputBase) m_Inputs[1];
             var audioAttrsList = new List<AudioTrackAttributes>();
 
             if (audioInput.audioSettings.PreserveAudio)
@@ -196,7 +196,7 @@ namespace UnityEditor.Recorder
                 throw new Exception("Unsupported number of sources");
 
             base.RecordFrame(session);
-            var audioInput = (AudioInput)m_Inputs[1];
+            var audioInput = (AudioInputBase) m_Inputs[1];
             if (audioInput.audioSettings.PreserveAudio)
                 Settings.m_EncoderManager.AddSamples(m_EncoderHandle, audioInput.mainBuffer);
         }

@@ -1,13 +1,20 @@
 {
     "name": "Unity.Recorder.Editor",
     "references": [
-      "Unity.Recorder.Base",
-      "Unity.Recorder",
-	  "Unity.Timeline"
+        "Unity.Recorder.Base",
+        "Unity.Recorder",
+        "Unity.Timeline",
+        "Fmod.Runtime"
     ],
     "includePlatforms": [
         "Editor"
     ],
     "excludePlatforms": [],
-    "allowUnsafeCode": true
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
 }

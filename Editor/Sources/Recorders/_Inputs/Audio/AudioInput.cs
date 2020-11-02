@@ -1,7 +1,13 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using System.Reflection;
+using FMOD;
+using FMODUnity;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using UnityEngine.Assertions;
+using Debug = UnityEngine.Debug;
 
 namespace UnityEditor.Recorder.Input
 {
@@ -61,7 +67,15 @@ namespace UnityEditor.Recorder.Input
         }
     }
 
-    class AudioInput : RecorderInput
+    internal abstract class AudioInputBase : RecorderInput
+    {
+        public abstract ushort channelCount { get; }
+        public abstract int sampleRate { get; }
+        public abstract NativeArray<float> mainBuffer { get; }
+        public abstract AudioInputSettings audioSettings { get; }
+    }
+
+    class UnityAudioInput : AudioInputBase
     {
         class BufferManager : IDisposable
         {
@@ -88,25 +102,25 @@ namespace UnityEditor.Recorder.Input
 
         ushort m_ChannelCount;
 
-        public ushort channelCount
+        public override ushort channelCount
         {
             get { return m_ChannelCount; }
         }
 
-        public int sampleRate
+        public override int sampleRate
         {
             get { return AudioSettings.outputSampleRate; }
         }
 
-        public NativeArray<float> mainBuffer
+        public override NativeArray<float> mainBuffer
         {
             get { return s_BufferManager.GetBuffer(0); }
         }
 
-        static AudioInput s_Handler;
+        static UnityAudioInput s_Handler;
         static BufferManager s_BufferManager;
 
-        public AudioInputSettings audioSettings
+        public override AudioInputSettings audioSettings
         {
             get { return (AudioInputSettings)settings; }
         }
@@ -179,6 +193,207 @@ namespace UnityEditor.Recorder.Input
 
             if (audioSettings.PreserveAudio)
                 AudioRenderer.Stop();
+        }
+    }
+
+    /// <summary>
+    /// (ASG) An Audio Input for FMOD. This reads the raw audio coming out of the FMOD system and forwards it to Unity Recorder.
+    /// Implemented as a custom DSP that is added to the end of the FMOD Master Bus. We read audio blocks from the DSP callback.
+    /// </summary>
+    class FmodAudioInput : AudioInputBase
+    {
+        private ushort mChannelCount;
+        public override ushort channelCount => mChannelCount;
+
+        private int mSampleRate;
+        public override int sampleRate => mSampleRate;
+
+        // A list of received audio blocks waiting to be encoded. Stores blocks until we send them to Unity Recorder in NewFrameReady.
+        // These arrays are reused every frame, as blocks are always the same size.
+        private readonly List<NativeArray<float>> mixBlockQueue = new List<NativeArray<float>>();
+        private int mixBlockQueueSize;
+
+        private NativeArray<float> mMainBuffer; // Allocated temp every frame, with all the unencoded samples
+        public override NativeArray<float> mainBuffer => mMainBuffer;
+
+        public override AudioInputSettings audioSettings => (AudioInputSettings) settings;
+
+        // Keep a reference to the dsp callback so it doesn't get garbage collected.
+        private static DSP_READCALLBACK dspCallback;
+        private DSP dsp;
+
+        protected internal override void BeginRecording(RecordingSession session)
+        {
+            var dspName = "RecordSessionVideo(Audio)".ToCharArray();
+            Array.Resize(ref dspName, 32);
+            dspCallback = DspReadCallback;
+            var dspDescription = new DSP_DESCRIPTION
+            {
+                version = 0x00010000,
+                name = dspName,
+                numinputbuffers = 1,
+                numoutputbuffers = 1,
+                read = dspCallback,
+                numparameters = 0
+            };
+
+            FMOD.System system = RuntimeManager.CoreSystem;
+            CheckError(system.getMasterChannelGroup(out ChannelGroup masterGroup));
+            CheckError(masterGroup.getDSP(CHANNELCONTROL_DSP_INDEX.TAIL, out DSP masterDspTail));
+            CheckError(masterDspTail.getChannelFormat(out CHANNELMASK channelMask, out int numChannels,
+                out SPEAKERMODE sourceSpeakerMode));
+
+            Debug.Log(
+                $"(UnityRecorder/FmodAudioInput) Setting DSP to [{channelMask}] [{numChannels}] [{sourceSpeakerMode}]");
+
+            // Create a new DSP with the format of the existing master group.
+            CheckError(system.createDSP(ref dspDescription, out dsp));
+            CheckError(dsp.setChannelFormat(channelMask, numChannels, sourceSpeakerMode));
+            CheckError(masterGroup.addDSP(CHANNELCONTROL_DSP_INDEX.TAIL, dsp));
+
+            // Fill in some basic information for the Unity audio encoder.
+            mChannelCount = (ushort) numChannels;
+            CheckError(system.getDriver(out int driverId));
+            CheckError(system.getDriverInfo(driverId, out Guid _, out int systemRate, out SPEAKERMODE _, out int _));
+            mSampleRate = systemRate;
+
+            if (RecorderOptions.VerboseMode)
+                Debug.Log($"FmodAudioInput.BeginRecording for capture frame rate {Time.captureFramerate}");
+
+            if (audioSettings.PreserveAudio)
+                AudioRenderer.Start();
+        }
+
+        protected internal override void NewFrameReady(RecordingSession session)
+        {
+            int totalFloats = 0;
+            for (int i = 0; i < mixBlockQueueSize; i++)
+            {
+                totalFloats += mixBlockQueue[i].Length;
+            }
+
+            // Allocate a giant buffer with all of the samples, since the last frame.
+            // This is necessary because the Unity audio encoder expects a single native array.
+            mMainBuffer = new NativeArray<float>(totalFloats, Allocator.Temp);
+
+            int index = 0;
+            for (int i = 0; i < mixBlockQueueSize; i++)
+            {
+                NativeArray<float>.Copy(mixBlockQueue[i], 0, mMainBuffer, index, mixBlockQueue[i].Length);
+                index += mixBlockQueue[i].Length;
+            }
+
+            // Reset the list of blocks, so it can be reused.
+            mixBlockQueueSize = 0;
+        }
+
+        /// <inheritdoc />
+        protected internal override void EndRecording(RecordingSession session)
+        {
+            base.EndRecording(session);
+
+            CheckError(RuntimeManager.CoreSystem.getMasterChannelGroup(out ChannelGroup master), shouldThrow: false);
+            CheckError(master.removeDSP(dsp), shouldThrow: false);
+
+            // This may throw an error, if EndRecording is called more than once for a single BeginRecording.
+            // However, this shouldn't be case, and should be treated as a bug, instead.
+            CheckError(dsp.release(), shouldThrow: false);
+
+            // Release our temporary queue.
+            foreach (NativeArray<float> blockBuffer in mixBlockQueue)
+            {
+                blockBuffer.Dispose();
+            }
+
+            mixBlockQueue.Clear();
+            mixBlockQueueSize = 0;
+        }
+
+        private RESULT DspReadCallback(ref DSP_STATE dspState, IntPtr inBuffer, IntPtr outBuffer, uint samples,
+                                       int inChannels, ref int outChannels)
+        {
+            try
+            {
+                // Debug.Log($"Received buffer of samples: {samples}, channels: {inchannels}");
+                Assert.AreEqual(inChannels, outChannels);
+
+                const int sampleSizeBytes = 4; // size of a float
+                int blockSizeFloats = (int) (samples * inChannels); // size of a float
+                int blockSizeBytes = blockSizeFloats * sampleSizeBytes;
+
+                // Copy the audio into the buffer queue
+                NativeArray<float> buffer;
+                if (mixBlockQueueSize == mixBlockQueue.Count)
+                {
+                    // Add a new buffer if there are no empty buffers left in the list.
+                    buffer = new NativeArray<float>(blockSizeFloats, Allocator.Persistent);
+                    mixBlockQueue.Add(buffer);
+                    if (mixBlockQueue.Count > 32)
+                    {
+                        // This warning fires if we have been saving blocks, but NewFrameReady hasn't been called recently to drain the queue.
+                        // For some reason it's been a while since the Unity recorder requested the latest samples.
+                        // This is probably a bug elsewhere.
+                        Debug.LogWarning(
+                            $"(UnityRecorder/FmodAudioInput) Mix block queue is way too long [{mixBlockQueue.Count}]!" +
+                            $" Is it not flushing properly?");
+                    }
+                }
+                else
+                {
+                    // Use the next free buffer.
+                    buffer = mixBlockQueue[mixBlockQueueSize];
+
+                    // Reallocate the buffer if the block size has changed (could happen if the audio device changes).
+                    if (buffer.Length != blockSizeFloats)
+                    {
+                        buffer.Dispose();
+                        buffer = new NativeArray<float>(blockSizeFloats, Allocator.Persistent);
+                        mixBlockQueue[mixBlockQueueSize] = buffer;
+                    }
+                }
+
+                mixBlockQueueSize++;
+
+                // Copy the audio to the block list.
+                unsafe
+                {
+                    Buffer.MemoryCopy(inBuffer.ToPointer(), buffer.GetUnsafePtr(),
+                        blockSizeBytes, blockSizeBytes);
+                }
+
+                // Pass the input through to the output, so we can still hear it.
+                unsafe
+                {
+                    Buffer.MemoryCopy(inBuffer.ToPointer(), outBuffer.ToPointer(),
+                        blockSizeBytes,
+                        blockSizeBytes);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("There was an error with DSP Processing.");
+                Debug.LogException(e);
+                return RESULT.ERR_DSP_DONTPROCESS;
+            }
+
+            return RESULT.OK;
+        }
+
+        // Checks for fmod errors.
+        public static void CheckError(RESULT result, bool shouldThrow = true)
+        {
+            if (result != RESULT.OK)
+            {
+                if (shouldThrow)
+                {
+                    throw new Exception(result.ToString());
+                }
+                else
+                {
+                    Debug.LogException(
+                        new Exception("Got error from FMOD, but suppressing exception. ERROR:  " + result));
+                }
+            }
         }
     }
 }

@@ -25,7 +25,7 @@ namespace UnityEditor.Recorder.Input
         /// <inheritdoc/>
         protected internal override Type InputType
         {
-            get { return typeof(AudioInput); }
+            get { return typeof(FmodAudioInput); }
         }
 
         /// <inheritdoc/>
