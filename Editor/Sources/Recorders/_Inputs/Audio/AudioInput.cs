@@ -243,8 +243,11 @@ namespace UnityEditor.Recorder.Input
             CheckError(masterDspTail.getChannelFormat(out CHANNELMASK channelMask, out int numChannels,
                 out SPEAKERMODE sourceSpeakerMode));
 
-            Debug.Log(
-                $"(UnityRecorder/FmodAudioInput) Setting DSP to [{channelMask}] [{numChannels}] [{sourceSpeakerMode}]");
+            if (RecorderOptions.VerboseMode)
+            {
+                Debug.Log(
+                    $"(UnityRecorder) Listening to FMOD Audio. Setting DSP to [{channelMask}] [{numChannels}] [{sourceSpeakerMode}]");
+            }
 
             // Create a new DSP with the format of the existing master group.
             CheckError(system.createDSP(ref dspDescription, out dsp));
