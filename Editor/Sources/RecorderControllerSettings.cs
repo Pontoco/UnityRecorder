@@ -166,7 +166,7 @@ namespace UnityEditor.Recorder
             return LoadOrCreate(globalPath);
         }
 
-        internal void ReleaseRecorderSettings()
+        public void ReleaseRecorderSettings()
         {
             foreach (var recorder in m_RecorderSettings)
             {
