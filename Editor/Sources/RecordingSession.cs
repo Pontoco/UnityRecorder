@@ -29,7 +29,7 @@ namespace UnityEditor.Recorder
 
         internal bool isRecording
         {
-            get { return recorder.Recording; }
+            get { return recorder?.Recording ?? false; }
         }
 
         public int frameIndex
@@ -199,6 +199,7 @@ namespace UnityEditor.Recorder
                 EndRecording();
 
                 UnityHelpers.Destroy(recorder);
+                recorder = null;
             }
         }
     }
