@@ -29,6 +29,13 @@ namespace UnityEditor.Recorder
         /// </summary>
         private bool m_RecordingStartedProperly = false;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        private static void EnterPlayMode()
+        {
+            s_ConcurrentCount = 0;
+            s_WarnedUserOfConcurrentCount = false;
+        }
+
         protected override TextureFormat ReadbackTextureFormat
         {
             get
