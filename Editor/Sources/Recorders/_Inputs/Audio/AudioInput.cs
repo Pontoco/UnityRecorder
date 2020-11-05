@@ -210,7 +210,7 @@ namespace UnityEditor.Recorder.Input
 
         // A list of received audio blocks waiting to be encoded. Stores blocks until we send them to Unity Recorder in NewFrameReady.
         // These arrays are reused every frame, as blocks are always the same size.
-        private readonly List<NativeArray<float>> mixBlockQueue = new List<NativeArray<float>>();
+        private readonly List<float[]> mixBlockQueue = new List<float[]>();
         private int mixBlockQueueSize;
 
         private NativeArray<float> mMainBuffer; // Allocated temp every frame, with all the unencoded samples
@@ -302,12 +302,6 @@ namespace UnityEditor.Recorder.Input
             // However, this shouldn't be case, and should be treated as a bug, instead.
             CheckError(dsp.release(), shouldThrow: false);
 
-            // Release our temporary queue.
-            foreach (NativeArray<float> blockBuffer in mixBlockQueue)
-            {
-                blockBuffer.Dispose();
-            }
-
             mixBlockQueue.Clear();
             mixBlockQueueSize = 0;
         }
@@ -325,11 +319,11 @@ namespace UnityEditor.Recorder.Input
                 int blockSizeBytes = blockSizeFloats * sampleSizeBytes;
 
                 // Copy the audio into the buffer queue
-                NativeArray<float> buffer;
+                float[] buffer;
                 if (mixBlockQueueSize == mixBlockQueue.Count)
                 {
                     // Add a new buffer if there are no empty buffers left in the list.
-                    buffer = new NativeArray<float>(blockSizeFloats, Allocator.Persistent);
+                    buffer = new float[blockSizeFloats];
                     mixBlockQueue.Add(buffer);
                     if (mixBlockQueue.Count > 32)
                     {
@@ -349,8 +343,7 @@ namespace UnityEditor.Recorder.Input
                     // Reallocate the buffer if the block size has changed (could happen if the audio device changes).
                     if (buffer.Length != blockSizeFloats)
                     {
-                        buffer.Dispose();
-                        buffer = new NativeArray<float>(blockSizeFloats, Allocator.Persistent);
+                        buffer = new float[blockSizeFloats];
                         mixBlockQueue[mixBlockQueueSize] = buffer;
                     }
                 }
@@ -360,8 +353,11 @@ namespace UnityEditor.Recorder.Input
                 // Copy the audio to the block list.
                 unsafe
                 {
-                    Buffer.MemoryCopy(inBuffer.ToPointer(), buffer.GetUnsafePtr(),
-                        blockSizeBytes, blockSizeBytes);
+                    fixed (float* bufferPtr = buffer)
+                    {
+                        Buffer.MemoryCopy(inBuffer.ToPointer(), bufferPtr,
+                            blockSizeBytes, blockSizeBytes);
+                    }
                 }
 
                 // Pass the input through to the output, so we can still hear it.
