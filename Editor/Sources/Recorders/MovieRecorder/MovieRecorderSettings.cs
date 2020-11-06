@@ -344,7 +344,7 @@ namespace UnityEditor.Recorder
             if (FrameRatePlayback == FrameRatePlayback.Constant &&
                 AudioInputSettings.InputType == typeof(FmodAudioInput))
             {
-                errors.Add("MovieRecorder does not support recording FMOD Audio with a constant video frame rate." +
+                errors.Add("MovieRecorder does not support recording FMOD Audio with a constant video frame rate. " +
                            "Please use a variable frame rate, instead.");
                 ok = false;
             }
