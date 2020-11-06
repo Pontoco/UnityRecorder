@@ -213,6 +213,11 @@ namespace UnityEditor.Recorder.Input
         private readonly List<float[]> mixBlockQueue = new List<float[]>();
         private int mixBlockQueueSize;
 
+        // If the game is paused, or hung, the audio will continue to accumulate up to this number of blocks, before
+        // cutting. This keeps audio smooth, even with hiccups in the video feed.
+        // Note: 512 blocks at 48000Hz is about 10 seconds of audio, and about 15Mb of memory.
+        private const int MaxBlockQueueSize = 512;
+
         private NativeArray<float> mMainBuffer; // Allocated temp every frame, with all the unencoded samples
         public override NativeArray<float> mainBuffer => mMainBuffer;
 
@@ -337,57 +342,53 @@ namespace UnityEditor.Recorder.Input
                 int blockSizeFloats = (int) (samples * inChannels); // size of a float
                 int blockSizeBytes = blockSizeFloats * sampleSizeBytes;
 
-                lock (mixBlockQueue)
-                {
-                    // Copy the audio into the buffer queue
-                    float[] buffer;
-                    if (mixBlockQueueSize == mixBlockQueue.Count)
-                    {
-                        // Add a new buffer if there are no empty buffers left in the list.
-                        buffer = new float[blockSizeFloats];
-                        mixBlockQueue.Add(buffer);
-                        if (mixBlockQueue.Count > 500)
-                        {
-                            // This warning fires if we have been saving blocks, but NewFrameReady hasn't been called recently to drain the queue.
-                            // For some reason it's been a while since the Unity recorder requested the latest samples.
-                            // This is probably a bug elsewhere.
-                            Debug.LogWarning(
-                                $"(UnityRecorder/FmodAudioInput) Mix block queue is way too long [{mixBlockQueue.Count}]!" +
-                                $" Is it not flushing properly?");
-                        }
-                    }
-                    else
-                    {
-                        // Use the next free buffer.
-                        buffer = mixBlockQueue[mixBlockQueueSize];
-
-                        // Reallocate the buffer if the block size has changed (could happen if the audio device changes).
-                        if (buffer.Length != blockSizeFloats)
-                        {
-                            buffer = new float[blockSizeFloats];
-                            mixBlockQueue[mixBlockQueueSize] = buffer;
-                        }
-                    }
-
-                    mixBlockQueueSize++;
-
-                    // Copy the audio to the block list.
-                    unsafe
-                    {
-                        fixed (float* bufferPtr = buffer)
-                        {
-                            Buffer.MemoryCopy(inBuffer.ToPointer(), bufferPtr,
-                                blockSizeBytes, blockSizeBytes);
-                        }
-                    }
-                }
-
                 // Pass the input through to the output, so we can still hear it.
                 unsafe
                 {
                     Buffer.MemoryCopy(inBuffer.ToPointer(), outBuffer.ToPointer(),
                         blockSizeBytes,
                         blockSizeBytes);
+                }
+
+                // Copy the audio into our buffer queue
+                lock (mixBlockQueue)
+                {
+                    // If we've queued up too many blocks, without writing them to the encoder, just stop recording audio.
+                    // This can happen if the game pauses, and game Update()'s stop.
+                    if (mixBlockQueueSize < MaxBlockQueueSize)
+                    {
+                        float[] buffer;
+                        if (mixBlockQueueSize == mixBlockQueue.Count)
+                        {
+                            // Add a new buffer if there are no empty buffers left in the list.
+                            buffer = new float[blockSizeFloats];
+                            mixBlockQueue.Add(buffer);
+                        }
+                        else
+                        {
+                            // Use the next free buffer.
+                            buffer = mixBlockQueue[mixBlockQueueSize];
+
+                            // Reallocate the buffer if the block size has changed (could happen if the audio device changes).
+                            if (buffer.Length != blockSizeFloats)
+                            {
+                                buffer = new float[blockSizeFloats];
+                                mixBlockQueue[mixBlockQueueSize] = buffer;
+                            }
+                        }
+
+                        mixBlockQueueSize++;
+
+                        // Copy the audio to the block list.
+                        unsafe
+                        {
+                            fixed (float* bufferPtr = buffer)
+                            {
+                                Buffer.MemoryCopy(inBuffer.ToPointer(), bufferPtr,
+                                    blockSizeBytes, blockSizeBytes);
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception e)
