@@ -325,9 +325,27 @@ namespace UnityEditor.Recorder
         {
             var ok = base.ValidityCheck(errors);
 
-            if (FrameRatePlayback == FrameRatePlayback.Variable)
+            // Note(John): Rendering a constant video frame rate with fmod is challenging. Normally, UnityRecorder
+            // approaches rendering constant framerates by setting Time.captureFrameRate. This forces the entire
+            // game to run *slower* than the target frame rate, but overrides Time.deltaTime every frame to be fixed.
+            //
+            // This lets a game capture device take as long as it likes to render and capture each frame. This is
+            // normally great, but FMOD audio is on a separate thread, and is totally unaffected by Time.captureFrameRate.
+            //
+            // The end result is constant video playback, but where audio runs way ahead of the video, leading to heavy
+            // desyncs, and hangs within the Unity MediaEncoder. This issue would have to be solved by putting FMOD into
+            // its synchronous mode, stepping it only for every real frame update. This is possible, but needs work.
+            //
+            // On the whole, recording a constant frame rate is weird in VR. InputRecordings only look smooth if they
+            // are played back with the same frame timings (this is why when you record in fast-forward it looks weird
+            // when played back at normal speed). So if we want to take a video recording with a constant frame rate,
+            // the played InputRecording must have been recorded at *exactly that frame rate, with no hiccups*. Possible,
+            // but a little tricky. Needs further exploration.
+            if (FrameRatePlayback == FrameRatePlayback.Constant &&
+                AudioInputSettings.InputType == typeof(FmodAudioInput))
             {
-                errors.Add("Movie recorder does not properly support Variable frame rate playback. Please consider using Constant frame rate instead");
+                errors.Add("MovieRecorder does not support recording FMOD Audio with a constant video frame rate." +
+                           "Please use a variable frame rate, instead.");
                 ok = false;
             }
 

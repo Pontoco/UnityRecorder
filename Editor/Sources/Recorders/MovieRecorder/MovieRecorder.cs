@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Core.Harness;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEditor.Recorder;
@@ -28,6 +30,12 @@ namespace UnityEditor.Recorder
         /// Whether or not recording was started properly.
         /// </summary>
         private bool m_RecordingStartedProperly = false;
+
+        /// <summary>
+        /// The frame rate the encoder is set to. This is fixed for the entire recording. Video encoders use rational
+        /// numbers for frame rates to avoid rounding error.
+        /// </summary>
+        private MediaRational m_FrameRate;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
         private static void EnterPlayMode()
@@ -92,21 +100,24 @@ namespace UnityEditor.Recorder
                 return false;
             }
 
+            // In variable frame rate mode, we set the encoder to the frame rate of the current display.
+            m_FrameRate = RationalFromDouble(
+                session.settings.FrameRatePlayback == FrameRatePlayback.Variable
+                    ? GameHarness.DisplayFPSTarget
+                    : session.settings.FrameRate);
+
             var videoAttrs = new VideoTrackAttributes
             {
-                frameRate = RationalFromDouble(session.settings.FrameRate),
                 width = (uint)width,
                 height = (uint)height,
+                frameRate = m_FrameRate,
                 includeAlpha = alphaWillBeInImage,
                 bitRateMode = Settings.VideoBitRateMode
             };
 
-            if (RecorderOptions.VerboseMode)
-                Debug.Log(
-                    string.Format(
-                        "MovieRecorder starting to write video {0}x{1}@[{2}/{3}] fps into {4}",
-                        width, height, videoAttrs.frameRate.numerator,
-                        videoAttrs.frameRate.denominator, Settings.fileNameGenerator.BuildAbsolutePath(session)));
+            Debug.Log($"(UnityRecorder/MovieRecorder) Encoding video " +
+                $"{width}x{height}@[{videoAttrs.frameRate.numerator}/{videoAttrs.frameRate.denominator}] fps into " +
+                $"{Settings.fileNameGenerator.BuildAbsolutePath(session)}");
 
             var audioInput = (AudioInputBase) m_Inputs[1];
             var audioAttrsList = new List<AudioTrackAttributes>();
@@ -232,11 +243,32 @@ namespace UnityEditor.Recorder
             WarnOfConcurrentRecorders();
         }
 
+        private long lastFrame = 0;
+
 #if UNITY_2019_1_OR_NEWER
-        protected override void WriteFrame(AsyncGPUReadbackRequest r)
+        protected override void WriteFrame(AsyncGPUReadbackRequest r, double timestamp)
         {
             var format = Settings.GetCurrentEncoder().GetTextureFormat(Settings);
-            Settings.m_EncoderManager.AddFrame(m_EncoderHandle, r.width, r.height, 0, format, r.GetData<byte>());
+
+            if (Settings.FrameRatePlayback == FrameRatePlayback.Variable)
+            {
+                // The closest media frame to the actual frame's timestamp.
+                int frame = Mathf.RoundToInt((float) (timestamp / (1.0 / (double) m_FrameRate)));
+                MediaTime time = new MediaTime(frame, (uint) m_FrameRate.numerator, (uint) m_FrameRate.denominator);
+
+                if (time.count > lastFrame) // If two render frames fall on the same encoding frame, ignore.
+                {
+                    Settings.m_EncoderManager.AddFrame(m_EncoderHandle, r.width, r.height, 0, format, r.GetData<byte>(),
+                        time);
+                }
+
+                lastFrame = time.count;
+            }
+            else
+            {
+                Settings.m_EncoderManager.AddFrame(m_EncoderHandle, r.width, r.height, 0, format, r.GetData<byte>());
+            }
+
             WarnOfConcurrentRecorders();
         }
 

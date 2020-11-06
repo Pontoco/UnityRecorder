@@ -5,7 +5,6 @@ using System.Reflection;
 using FMOD;
 using FMODUnity;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine.Assertions;
 using Debug = UnityEngine.Debug;
 
@@ -73,6 +72,7 @@ namespace UnityEditor.Recorder.Input
         public abstract int sampleRate { get; }
         public abstract NativeArray<float> mainBuffer { get; }
         public abstract AudioInputSettings audioSettings { get; }
+        public abstract double audioTime { get; }
     }
 
     class UnityAudioInput : AudioInputBase
@@ -125,6 +125,9 @@ namespace UnityEditor.Recorder.Input
             get { return (AudioInputSettings)settings; }
         }
 
+        private long recordedSamples = 0;
+        public override double audioTime => (double) recordedSamples / sampleRate;
+        
         protected internal override void BeginRecording(RecordingSession session)
         {
             m_ChannelCount = new Func<ushort>(() => {
@@ -171,6 +174,7 @@ namespace UnityEditor.Recorder.Input
                 s_BufferManager = new BufferManager(bufferCount, sampleFrameCount, m_ChannelCount);
 
                 AudioRenderer.Render(mainBuffer);
+                recordedSamples += sampleFrameCount;
             }
         }
 
@@ -222,6 +226,9 @@ namespace UnityEditor.Recorder.Input
         public override NativeArray<float> mainBuffer => mMainBuffer;
 
         public override AudioInputSettings audioSettings => (AudioInputSettings) settings;
+
+        private long sampleFrames = 0;
+        public override double audioTime => (double) sampleFrames / sampleRate;
 
         // Keep a reference to the dsp callback so it doesn't get garbage collected.
         private static DSP_READCALLBACK dspCallback;

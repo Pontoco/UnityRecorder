@@ -4,7 +4,8 @@
         "Unity.Recorder.Base",
         "Unity.Recorder",
         "Unity.Timeline",
-        "Fmod.Runtime"
+        "Fmod.Runtime",
+        "Clockwork.Core.Harness"
     ],
     "includePlatforms": [
         "Editor"

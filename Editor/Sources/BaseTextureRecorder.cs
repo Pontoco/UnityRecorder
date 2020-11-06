@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using UnityEditor.Recorder.Input;
 using UnityEngine;
 using UnityEngine.Profiling;
 using UnityEngine.Rendering;
@@ -11,7 +13,7 @@ namespace UnityEditor.Recorder
     /// <typeparam name="T">The class implementing the Recorder Settings.</typeparam>
     public abstract class BaseTextureRecorder<T> : GenericRecorder<T> where T : RecorderSettings
     {
-        int       m_OngoingAsyncGPURequestsCount;
+        Dictionary<AsyncGPUReadbackRequest, double> m_OngoingRequests; // live requests and the frame's timestamp
         bool      m_DelayedEncoderDispose;
 
         /// <summary>
@@ -33,7 +35,7 @@ namespace UnityEditor.Recorder
                 return false;
 
             UseAsyncGPUReadback = SystemInfo.supportsAsyncGPUReadback;
-            m_OngoingAsyncGPURequestsCount = 0;
+            m_OngoingRequests = new Dictionary<AsyncGPUReadbackRequest, double>();
             m_DelayedEncoderDispose = false;
             return true;
         }
@@ -53,9 +55,10 @@ namespace UnityEditor.Recorder
 
             if (UseAsyncGPUReadback)
             {
-                AsyncGPUReadback.Request(
+                var request = AsyncGPUReadback.Request(
                     renderTexture, 0, ReadbackTextureFormat, ReadbackDone);
-                ++m_OngoingAsyncGPURequestsCount;
+                // ASG: Use the audio time for determining frame timestamps. This guarantees audio always lines up.
+                m_OngoingRequests.Add(request, ((AudioInputBase) m_Inputs[1]).audioTime);
                 return;
             }
 
@@ -76,10 +79,10 @@ namespace UnityEditor.Recorder
         private void ReadbackDone(AsyncGPUReadbackRequest r)
         {
             Profiler.BeginSample("BaseTextureRecorder.ReadbackDone");
-            WriteFrame(r);
+            WriteFrame(r, m_OngoingRequests[r]);
             Profiler.EndSample();
-            --m_OngoingAsyncGPURequestsCount;
-            if (m_OngoingAsyncGPURequestsCount == 0 && m_DelayedEncoderDispose)
+            m_OngoingRequests.Remove(r);
+            if (m_OngoingRequests.Count == 0 && m_DelayedEncoderDispose)
                 DisposeEncoder();
         }
 
@@ -87,7 +90,7 @@ namespace UnityEditor.Recorder
         protected internal override void EndRecording(RecordingSession session)
         {
             base.EndRecording(session);
-            if (m_OngoingAsyncGPURequestsCount > 0)
+            if (m_OngoingRequests.Count > 0)
             {
                 Recording = true;
                 m_DelayedEncoderDispose = true;
@@ -105,7 +108,7 @@ namespace UnityEditor.Recorder
         /// Writes the frame from an asynchronous GPU read request.
         /// </summary>
         /// <param name="r">The asynchronous readback target.</param>
-        protected virtual void WriteFrame(AsyncGPUReadbackRequest r)
+        protected virtual void WriteFrame(AsyncGPUReadbackRequest r, double timestamp)
         {
             if (m_ReadbackTexture == null)
                 m_ReadbackTexture = CreateReadbackTexture(r.width, r.height);
