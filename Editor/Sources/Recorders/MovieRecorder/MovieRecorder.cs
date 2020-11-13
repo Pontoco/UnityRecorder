@@ -248,6 +248,12 @@ namespace UnityEditor.Recorder
 #if UNITY_2019_1_OR_NEWER
         protected override void WriteFrame(AsyncGPUReadbackRequest r, double timestamp)
         {
+            double currentTime = ((AudioInputBase)m_Inputs[1]).audioTime;
+            if (currentTime - timestamp  > 2)
+            {
+                Debug.Log($"(MovieRecorder) Received heavily delayed frame. Requested at [{timestamp}]. Received at [{currentTime}].");
+            }
+
             var format = Settings.GetCurrentEncoder().GetTextureFormat(Settings);
 
             if (Settings.FrameRatePlayback == FrameRatePlayback.Variable)
