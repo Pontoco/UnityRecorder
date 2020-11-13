@@ -259,8 +259,12 @@ namespace UnityEditor.Recorder
             if (Settings.FrameRatePlayback == FrameRatePlayback.Variable)
             {
                 // The closest media frame to the actual frame's timestamp.
-                int frame = Mathf.RoundToInt((float) (timestamp / (1.0 / (double) m_FrameRate)));
-                MediaTime time = new MediaTime(frame, (uint) m_FrameRate.numerator, (uint) m_FrameRate.denominator);
+                // Convert m_FrameRate using floating-point division. The overloaded cast-to-double operator uses integer division.
+                MediaTime time = new MediaTime
+                {
+                    count = (long) Math.Round(timestamp * m_FrameRate.numerator / m_FrameRate.denominator),
+                    rate = m_FrameRate
+                };
 
                 if (time.count > lastFrame) // If two render frames fall on the same encoding frame, ignore.
                 {
