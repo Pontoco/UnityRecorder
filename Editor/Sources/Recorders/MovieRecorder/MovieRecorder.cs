@@ -208,7 +208,7 @@ namespace UnityEditor.Recorder
 
             base.RecordFrame(session);
             var audioInput = (AudioInputBase) m_Inputs[1];
-            if (audioInput.audioSettings.PreserveAudio && lastFrame > -1)
+            if (audioInput.audioSettings.PreserveAudio)
                 Settings.m_EncoderManager.AddSamples(m_EncoderHandle, audioInput.mainBuffer);
         }
 
