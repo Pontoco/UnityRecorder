@@ -208,7 +208,7 @@ namespace UnityEditor.Recorder
 
             base.RecordFrame(session);
             var audioInput = (AudioInputBase) m_Inputs[1];
-            if (audioInput.audioSettings.PreserveAudio)
+            if (audioInput.audioSettings.PreserveAudio && lastFrame > -1)
                 Settings.m_EncoderManager.AddSamples(m_EncoderHandle, audioInput.mainBuffer);
         }
 
@@ -243,7 +243,7 @@ namespace UnityEditor.Recorder
             WarnOfConcurrentRecorders();
         }
 
-        private long lastFrame = 0;
+        private long lastFrame = -1;
 
 #if UNITY_2019_1_OR_NEWER
         protected override void WriteFrame(AsyncGPUReadbackRequest r, double timestamp)
