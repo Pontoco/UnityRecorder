@@ -290,14 +290,14 @@ namespace UnityEditor.Recorder.Input
                     totalReadBlocks = mixBlockQueueSize;
                     for (int i = 0; i < totalReadBlocks; i++)
                     {
-                        if (totalFloats / channelCount > 2 * sampleRate)
+                        if (totalFloats / channelCount > 1 * sampleRate)
                         {
                             // The Unity MediaEncoder hangs when we send hundreds of thousands of audio samples.
                             // This can happen if the game is paused (ie. the audio continues to queue, but no new
                             // Updates are happening). Instead, we just cut the audio in those cases.
                             // This is a workaround for the lag spikes we were seeing when recording.
                             Debug.Log($"(FmodAudioInput) More than 2 seconds of audio samples [{totalFloats}] " +
-                                      $"queued up since the last submission. Dropping.");
+                                      $"queued up since the last submission. Only sending [{totalFloats}]. Dropping the rest.");
                             totalReadBlocks = i;
                             break;
                         }
