@@ -1,11 +1,12 @@
 {
     "name": "Unity.Recorder.Editor",
+    "rootNamespace": "",
     "references": [
         "Unity.Recorder.Base",
         "Unity.Recorder",
         "Unity.Timeline",
-        "Fmod.Runtime",
-        "Clockwork.Core.Harness"
+        "Clockwork.Core.Harness",
+        "FMODUnity"
     ],
     "includePlatforms": [
         "Editor"
