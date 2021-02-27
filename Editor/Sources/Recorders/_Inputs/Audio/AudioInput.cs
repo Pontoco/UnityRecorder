@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Reflection;
+using System.Text;
 using FMOD;
 using FMODUnity;
 using Unity.Collections;
@@ -127,7 +128,7 @@ namespace UnityEditor.Recorder.Input
 
         private long recordedSamples = 0;
         public override double audioTime => (double) recordedSamples / sampleRate;
-        
+
         protected internal override void BeginRecording(RecordingSession session)
         {
             m_ChannelCount = new Func<ushort>(() => {
@@ -236,7 +237,7 @@ namespace UnityEditor.Recorder.Input
 
         protected internal override void BeginRecording(RecordingSession session)
         {
-            var dspName = "RecordSessionVideo(Audio)".ToCharArray();
+            var dspName = Encoding.UTF8.GetBytes("RecordSessionVideo(Audio)");
             Array.Resize(ref dspName, 32);
             dspCallback = DspReadCallback;
             var dspDescription = new DSP_DESCRIPTION
