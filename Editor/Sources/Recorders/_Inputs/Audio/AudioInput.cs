@@ -232,7 +232,7 @@ namespace UnityEditor.Recorder.Input
         public override double audioTime => (double) sampleFrames / sampleRate;
 
         // Keep a reference to the dsp callback so it doesn't get garbage collected.
-        private static DSP_READCALLBACK dspCallback;
+        private static DSP_READ_CALLBACK dspCallback;
         private DSP dsp;
 
         protected internal override void BeginRecording(RecordingSession session)
